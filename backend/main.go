@@ -2,203 +2,197 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
+	"strconv"
 )
 
-var sqliteReservedWords = map[string]bool{
-	"ABORT": true, "ACTION": true, "ADD": true, "AFTER": true,
-	"ALL": true, "ALTER": true, "ANALYZE": true, "AND": true,
-	"AS": true, "ASC": true, "ATTACH": true, "AUTOINCREMENT": true,
-	"BEFORE": true, "BEGIN": true, "BETWEEN": true, "BY": true,
-	"CASCADE": true, "CASE": true, "CAST": true, "CHECK": true,
-	"COLLATE": true, "COLUMN": true, "COMMIT": true, "CONFLICT": true,
-	"CONSTRAINT": true, "CREATE": true, "CROSS": true, "CURRENT_DATE": true,
-	"CURRENT_TIME": true, "CURRENT_TIMESTAMP": true, "DATABASE": true, "DEFAULT": true,
-	"DEFERRABLE": true, "DEFERRED": true, "DELETE": true, "DESC": true,
-	"DETACH": true, "DISTINCT": true, "DROP": true, "EACH": true,
-	"ELSE": true, "END": true, "ESCAPE": true, "EXCEPT": true,
-	"EXCLUSIVE": true, "EXISTS": true, "EXPLAIN": true, "FAIL": true,
-	"FOR": true, "FOREIGN": true, "FROM": true, "FULL": true,
-	"GLOB": true, "GROUP": true, "HAVING": true, "IF": true,
-	"IGNORE": true, "IMMEDIATE": true, "IN": true, "INDEX": true,
-	"INDEXED": true, "INITIALLY": true, "INNER": true, "INSERT": true,
-	"INSTEAD": true, "INTERSECT": true, "INTO": true, "IS": true,
-	"ISNULL": true, "JOIN": true, "KEY": true, "LEFT": true,
-	"LIKE": true, "LIMIT": true, "MATCH": true, "NATURAL": true,
-	"NO": true, "NOT": true, "NOTNULL": true, "NULL": true,
-	"OF": true, "OFFSET": true, "ON": true, "OR": true,
-	"ORDER": true, "OUTER": true, "PLAN": true, "PRAGMA": true,
-	"PRIMARY": true, "QUERY": true, "RAISE": true, "RECURSIVE": true,
-	"REFERENCES": true, "REGEXP": true, "REINDEX": true, "RELEASE": true,
-	"RENAME": true, "REPLACE": true, "RESTRICT": true, "RIGHT": true,
-	"ROLLBACK": true, "ROW": true, "SAVEPOINT": true, "SELECT": true,
-	"SET": true, "TABLE": true, "TEMP": true, "TEMPORARY": true,
-	"THEN": true, "TO": true, "TRANSACTION": true, "TRIGGER": true,
-	"UNION": true, "UNIQUE": true, "UPDATE": true, "USING": true,
-	"VACUUM": true, "VALUES": true, "VIEW": true, "VIRTUAL": true,
-	"WHEN": true, "WHERE": true, "WITH": true, "WITHOUT": true,
-}
-
-
-type Request struct {
+type AnalysisRequest struct {
 	Code string `json:"code"`
 }
 
-type Response struct {
-	ReservedWords []string          `json:"reservedWords"`
-	Operators     []string          `json:"operators"`
-	Numbers       []string          `json:"numbers"`
-	Symbols       []string          `json:"symbols"`
-	Strings       []string          `json:"strings"`
-	Comments      []string          `json:"comments"`
-	Totals        map[string]int    `json:"totals"`
+type ErrorDetail struct {
+	Line    int    `json:"line"`
+	Message string `json:"message"`
 }
 
+type AnalysisResult struct {
+	ReservedWords  []string          `json:"reservedWords"`
+	Operators      []string          `json:"operators"`
+	Numbers        []string          `json:"numbers"`
+	Symbols        []string          `json:"symbols"`
+	Strings        []string          `json:"strings"`
+	Comments       []string          `json:"comments"`
+	Totals         map[string]int    `json:"totals"`
+	Suggestions    []string          `json:"suggestions"`
+	SyntaxErrors   []ErrorDetail     `json:"syntaxErrors"`
+	SemanticErrors []ErrorDetail     `json:"semanticErrors"`
+}
 
-var (
-	reStringDouble = regexp.MustCompile(`"([^"]*)"`)
-	reStringSingle = regexp.MustCompile(`'([^']*)'`)
-	reComment      = regexp.MustCompile(`//.*`)
-	reNumber       = regexp.MustCompile(`\b\d+(\.\d+)?\b`)
-	reOperator     = regexp.MustCompile(`<>|<=|>=|=|\+|-|\*|/`)
-	reSymbol       = regexp.MustCompile(`[=+\-*/;,()]`)
-	reWord         = regexp.MustCompile(`\b\w+\b`)
-)
+func main() {
+	http.HandleFunc("/analyze", analyzeHandler) // <-- REGISTRA el handler
 
-func analyzeCode(code string) Response {
-	foundReserved := map[string]bool{}
-	foundOperators := map[string]bool{}
-	foundNumbers := map[string]bool{}
-	foundSymbols := map[string]bool{}
-	foundStrings := map[string]bool{}
-	foundComments := map[string]bool{}
-
-
-	comments := reComment.FindAllString(code, -1)
-	for _, c := range comments {
-		foundComments[c] = true
-	}
-	codeWithoutComments := reComment.ReplaceAllString(code, " ")
-
-	
-	stringsDouble := reStringDouble.FindAllStringSubmatch(codeWithoutComments, -1)
-	for _, m := range stringsDouble {
-		if len(m) > 1 {
-			foundStrings[m[1]] = true
-		}
-	}
-	codeWithoutStrings := reStringDouble.ReplaceAllString(codeWithoutComments, " ")
-
-	
-	stringsSingle := reStringSingle.FindAllStringSubmatch(codeWithoutStrings, -1)
-	for _, m := range stringsSingle {
-		if len(m) > 1 {
-			foundStrings[m[1]] = true
-		}
-	}
-	codeClean := reStringSingle.ReplaceAllString(codeWithoutStrings, " ")
-
-	
-	operators := reOperator.FindAllString(codeClean, -1)
-	for _, op := range operators {
-		foundOperators[op] = true
-	}
-
-	
-	symbols := reSymbol.FindAllString(codeClean, -1)
-	for _, sym := range symbols {
-		foundSymbols[sym] = true
-	}
-
-	
-	numbers := reNumber.FindAllString(codeClean, -1)
-	for _, num := range numbers {
-		foundNumbers[num] = true
-	}
-
-	
-	words := reWord.FindAllString(codeClean, -1)
-	for _, w := range words {
-		upper := strings.ToUpper(w)
-		if sqliteReservedWords[upper] {
-			foundReserved[upper] = true
-		}
-	}
-
-	for str := range foundStrings {
-		words := reWord.FindAllString(str, -1)
-		for _, w := range words {
-			upper := strings.ToUpper(w)
-			if sqliteReservedWords[upper] {
-				foundReserved[upper] = true
-			}
-		}
-	}
-
-	reservedSlice := mapKeysToSlice(foundReserved)
-	operatorSlice := mapKeysToSlice(foundOperators)
-	numberSlice := mapKeysToSlice(foundNumbers)
-	symbolSlice := mapKeysToSlice(foundSymbols)
-	stringSlice := mapKeysToSlice(foundStrings)
-	commentSlice := mapKeysToSlice(foundComments)
-
-
-	totals := map[string]int{
-		"identifiers": len(words) - len(foundReserved), // aproximación
-		"operators":   len(operatorSlice),
-		"numbers":     len(numberSlice),
-		"symbols":     len(symbolSlice),
-		"comments":    len(commentSlice),
-	}
-
-	return Response{
-		ReservedWords: reservedSlice,
-		Operators:     operatorSlice,
-		Numbers:       numberSlice,
-		Symbols:       symbolSlice,
-		Strings:       stringSlice,
-		Comments:      commentSlice,
-		Totals:        totals,
+	port := ":8080"
+	println("Servidor iniciado en http://localhost" + port)
+	err := http.ListenAndServe(port, nil)
+	if err != nil {
+		println("Error al iniciar el servidor:", err.Error())
 	}
 }
 
-func mapKeysToSlice(m map[string]bool) []string {
-	s := []string{}
-	for k := range m {
-		s = append(s, k)
-	}
-	return s
+func enableCors(w *http.ResponseWriter) {
+	(*w).Header().Set("Access-Control-Allow-Origin", "*") // o especifica "http://localhost:3000" si usas React
+	(*w).Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	(*w).Header().Set("Access-Control-Allow-Headers", "Content-Type")
 }
 
 func analyzeHandler(w http.ResponseWriter, r *http.Request) {
-	// Headers CORS
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	enableCors(&w)
 
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 
-	var req Request
+	var req AnalysisRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
-		http.Error(w, "Error en JSON", http.StatusBadRequest)
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
 
-	res := analyzeCode(req.Code)
+	code := req.Code
+	lines := strings.Split(code, "\n")
+
+	result := AnalysisResult{
+		ReservedWords:  []string{},
+		Operators:      []string{},
+		Numbers:        []string{},
+		Symbols:        []string{},
+		Strings:        []string{},
+		Comments:       []string{},
+		Totals:         map[string]int{},
+		Suggestions:    []string{},
+		SyntaxErrors:   []ErrorDetail{},
+		SemanticErrors: []ErrorDetail{},
+	}
+
+	reservedWordsList := []string{"function", "return", "if", "else", "for", "while", "echo", "class", "public", "private", "protected", "static", "var", "const"}
+	operatorsList := []string{"+", "-", "*", "/", "=", "==", "===", "!=", "<", ">", "<=", ">="}
+
+	wordRegex := regexp.MustCompile(`[a-zA-Z_][a-zA-Z0-9_]*`)
+	numberRegex := regexp.MustCompile(`\b\d+(\.\d+)?\b`)
+	stringRegex := regexp.MustCompile(`"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'`)
+	commentRegex := regexp.MustCompile(`//.*|/\*[\s\S]*?\*/`)
+
+	reservedSet := map[string]bool{}
+	operatorSet := map[string]bool{}
+	numberSet := map[string]bool{}
+	symbolSet := map[string]bool{}
+	stringSet := map[string]bool{}
+	commentSet := map[string]bool{}
+
+	for i, line := range lines {
+		lineNum := i + 1
+
+		comments := commentRegex.FindAllString(line, -1)
+		for _, c := range comments {
+			if !commentSet[c] {
+				commentSet[c] = true
+				result.Comments = append(result.Comments, c)
+			}
+		}
+
+		stringsFound := stringRegex.FindAllString(line, -1)
+		for _, s := range stringsFound {
+			if !stringSet[s] {
+				stringSet[s] = true
+				result.Strings = append(result.Strings, s)
+			}
+		}
+
+		words := wordRegex.FindAllString(line, -1)
+		for _, w := range words {
+			lw := strings.ToLower(w)
+			if contains(reservedWordsList, lw) && !reservedSet[lw] {
+				reservedSet[lw] = true
+				result.ReservedWords = append(result.ReservedWords, lw)
+			}
+		}
+
+		if strings.Contains(line, "fuction") {
+			result.SyntaxErrors = append(result.SyntaxErrors, ErrorDetail{
+				Line:    lineNum,
+				Message: "Se esperaba 'function' pero se encontró 'fuction'",
+			})
+			result.Suggestions = append(result.Suggestions, "Corrige 'fuction' por 'function' en línea "+itoa(lineNum))
+		}
+
+		for _, op := range operatorsList {
+			if strings.Contains(line, op) && !operatorSet[op] {
+				operatorSet[op] = true
+				result.Operators = append(result.Operators, op)
+			}
+		}
+
+		numbers := numberRegex.FindAllString(line, -1)
+		for _, n := range numbers {
+			if !numberSet[n] {
+				numberSet[n] = true
+				result.Numbers = append(result.Numbers, n)
+			}
+		}
+
+		symbols := []string{"(", ")", "{", "}", ";", ","}
+		for _, sym := range symbols {
+			if strings.Contains(line, sym) && !symbolSet[sym] {
+				symbolSet[sym] = true
+				result.Symbols = append(result.Symbols, sym)
+			}
+		}
+	}
+
+	if strings.Contains(code, "retrn") {
+		lineWithError := findLineWithSubstring(lines, "retrn")
+		result.SemanticErrors = append(result.SemanticErrors, ErrorDetail{
+			Line:    lineWithError,
+			Message: "Se esperaba 'return' pero se encontró 'retrn'",
+		})
+		result.Suggestions = append(result.Suggestions, "Corrige 'retrn' por 'return' en línea "+itoa(lineWithError))
+	}
+
+	result.Totals["reservedWords"] = len(result.ReservedWords)
+	result.Totals["operators"] = len(result.Operators)
+	result.Totals["numbers"] = len(result.Numbers)
+	result.Totals["symbols"] = len(result.Symbols)
+	result.Totals["strings"] = len(result.Strings)
+	result.Totals["comments"] = len(result.Comments)
+	result.Totals["syntaxErrors"] = len(result.SyntaxErrors)
+	result.Totals["semanticErrors"] = len(result.SemanticErrors)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(res)
+	json.NewEncoder(w).Encode(result)
 }
 
-func main() {
-	http.HandleFunc("/analyze", analyzeHandler)
-	fmt.Println("Servidor corriendo en http://localhost:8080")
-	http.ListenAndServe(":8080", nil)
+func contains(slice []string, s string) bool {
+	for _, v := range slice {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+func itoa(i int) string {
+	return strconv.Itoa(i)
+}
+
+func findLineWithSubstring(lines []string, substr string) int {
+	for i, line := range lines {
+		if strings.Contains(line, substr) {
+			return i + 1
+		}
+	}
+	return 0
 }

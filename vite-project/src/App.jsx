@@ -1,162 +1,131 @@
-import React, { useState } from "react";
-import "./App.css";
+import { useState } from "react";
+import "./App.css"; // si usas Tailwind, puedes ignorar esto
 
-function App() {
-  const [code, setCode] = useState(`package main
-
-import "fmt"
-
-func main() {
-  query := "SELECT * FROM users WHERE age > 18"
-  fmt.Println(query)
-}`);
-
+export default function App() {
+  const [code, setCode] = useState("");
   const [result, setResult] = useState(null);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(false);
 
-  const handleAnalyze = async () => {
-    setLoading(true);
-    setError(null);
-    setResult(null);
+  const analyzeCode = async () => {
+    const response = await fetch("http://localhost:8080/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
 
-    try {
-      const res = await fetch("http://localhost:8080/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code }),
-      });
-
-      if (!res.ok) {
-        throw new Error(`Error en la petición: ${res.statusText}`);
-      }
-
-      const data = await res.json();
-      setResult(data);
-    } catch (error) {
-      console.error("Error al analizar:", error);
-      setError("Error al analizar el código");
-    }
-
-    setLoading(false);
+    const data = await response.json();
+    setResult(data);
   };
 
   return (
-    <div className="container">
-      <h1>Analizador SQL - Tokens</h1>
+    <div style={styles.page}>
+      <h1 style={styles.title}>Analizador Léxico, Sintáctico y Semántico</h1>
+
       <textarea
+        placeholder="Escribe tu código PHP aquí..."
         value={code}
         onChange={(e) => setCode(e.target.value)}
-        rows={10}
-        style={{ width: "100%", fontFamily: "monospace" }}
-      ></textarea>
+        style={styles.textarea}
+      />
 
-      <button onClick={handleAnalyze} disabled={loading}>
-        {loading ? "Analizando..." : "Analizar"}
+      <button onClick={analyzeCode} style={styles.button}>
+        Analizar
       </button>
 
-      {error && <p style={{ color: "red" }}>{error}</p>}
-
       {result && (
-        <>
-          <h2>Tokens encontrados</h2>
+        <div style={styles.results}>
+          {renderTable("Palabras Reservadas", result.reservedWords)}
+          {renderTable("Operadores", result.operators)}
+          {renderTable("Números", result.numbers)}
+          {renderTable("Símbolos", result.symbols)}
+          {renderTable("Cadenas", result.strings)}
+          {renderTable("Comentarios", result.comments)}
+          {renderTable("Errores Sintácticos", result.syntaxErrors?.map(e => `Línea ${e.line}: ${e.message}`))}
+          {renderTable("Errores Semánticos", result.semanticErrors?.map(e => `Línea ${e.line}: ${e.message}`))}
+          {renderTable("Sugerencias", result.suggestions)}
 
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th style={{ border: "1px solid black", padding: "8px" }}>Categoría</th>
-                <th style={{ border: "1px solid black", padding: "8px" }}>Tokens</th>
-                <th style={{ border: "1px solid black", padding: "8px" }}>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td style={{ border: "1px solid black", padding: "8px" }}>Palabras Reservadas</td>
-                <td style={{ border: "1px solid black", padding: "8px" }}>
-                  {(result.reservedWords && result.reservedWords.length > 0)
-                    ? result.reservedWords.join(", ")
-                    : "-"}
-                </td>
-                <td style={{ border: "1px solid black", padding: "8px", textAlign: "center" }}>
-                  {result.reservedWords ? result.reservedWords.length : 0}
-                </td>
-              </tr>
-
-              <tr>
-                <td style={{ border: "1px solid black", padding: "8px" }}>Operadores</td>
-                <td style={{ border: "1px solid black", padding: "8px" }}>
-                  {(result.operators && result.operators.length > 0)
-                    ? result.operators.join(", ")
-                    : "-"}
-                </td>
-                <td style={{ border: "1px solid black", padding: "8px", textAlign: "center" }}>
-                  {result.operators ? result.operators.length : 0}
-                </td>
-              </tr>
-
-              <tr>
-                <td style={{ border: "1px solid black", padding: "8px" }}>Números</td>
-                <td style={{ border: "1px solid black", padding: "8px" }}>
-                  {(result.numbers && result.numbers.length > 0)
-                    ? result.numbers.join(", ")
-                    : "-"}
-                </td>
-                <td style={{ border: "1px solid black", padding: "8px", textAlign: "center" }}>
-                  {result.numbers ? result.numbers.length : 0}
-                </td>
-              </tr>
-
-              <tr>
-                <td style={{ border: "1px solid black", padding: "8px" }}>Símbolos</td>
-                <td style={{ border: "1px solid black", padding: "8px" }}>
-                  {(result.symbols && result.symbols.length > 0)
-                    ? result.symbols.join(", ")
-                    : "-"}
-                </td>
-                <td style={{ border: "1px solid black", padding: "8px", textAlign: "center" }}>
-                  {result.symbols ? result.symbols.length : 0}
-                </td>
-              </tr>
-
-              <tr>
-                <td style={{ border: "1px solid black", padding: "8px" }}>Cadenas</td>
-                <td style={{ border: "1px solid black", padding: "8px" }}>
-                  {(result.strings && result.strings.length > 0)
-                    ? result.strings.map(s => `"${s}"`).join(", ")
-                    : "-"}
-                </td>
-                <td style={{ border: "1px solid black", padding: "8px", textAlign: "center" }}>
-                  {result.strings ? result.strings.length : 0}
-                </td>
-              </tr>
-
-              <tr>
-                <td style={{ border: "1px solid black", padding: "8px" }}>Comentarios</td>
-                <td style={{ border: "1px solid black", padding: "8px" }}>
-                  {(result.comments && result.comments.length > 0)
-                    ? result.comments.join(", ")
-                    : "-"}
-                </td>
-                <td style={{ border: "1px solid black", padding: "8px", textAlign: "center" }}>
-                  {result.comments ? result.comments.length : 0}
-                </td>
-              </tr>
-
-              <tr>
-                <td style={{ border: "1px solid black", padding: "8px" }}>
-                  <strong>Identificadores (aprox.)</strong>
-                </td>
-                <td style={{ border: "1px solid black", padding: "8px" }}>-</td>
-                <td style={{ border: "1px solid black", padding: "8px", textAlign: "center" }}>
-                  {result.totals && result.totals.identifiers ? result.totals.identifiers : 0}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </>
+          <div style={styles.tableWrapper}>
+            <h3>Totales</h3>
+            <table style={styles.table}>
+              <tbody>
+                {Object.entries(result.totals).map(([key, value]) => (
+                  <tr key={key}>
+                    <td style={styles.cell}>{key}</td>
+                    <td style={styles.cell}>{value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
-export default App;
+const renderTable = (title, items) => {
+  if (!items || items.length === 0) return null;
+  return (
+    <div style={styles.tableWrapper}>
+      <h3>{title}</h3>
+      <table style={styles.table}>
+        <tbody>
+          {items.map((item, i) => (
+            <tr key={i}>
+              <td style={styles.cell}>{item}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+const styles = {
+  page: {
+    fontFamily: "Arial, sans-serif",
+    padding: "40px 20px",
+    maxWidth: "900px",
+    margin: "auto",
+    textAlign: "center",
+  },
+  title: {
+    fontSize: "2rem",
+    marginBottom: "30px",
+  },
+  textarea: {
+    width: "100%",
+    height: "200px",
+    padding: "15px",
+    fontSize: "16px",
+    borderRadius: "8px",
+    border: "1px solid #ccc",
+    marginBottom: "20px",
+    fontFamily: "monospace",
+  },
+  button: {
+    padding: "10px 20px",
+    fontSize: "16px",
+    borderRadius: "6px",
+    border: "none",
+    backgroundColor: "#007bff",
+    color: "white",
+    cursor: "pointer",
+    marginBottom: "30px",
+  },
+  results: {
+    marginTop: "40px",
+    textAlign: "left",
+  },
+  tableWrapper: {
+    marginBottom: "30px",
+  },
+  table: {
+    width: "100%",
+    borderCollapse: "collapse",
+    marginTop: "10px",
+  },
+  cell: {
+    border: "1px solid #ddd",
+    padding: "8px",
+  },
+};
