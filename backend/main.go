@@ -31,7 +31,7 @@ type AnalysisResult struct {
 }
 
 func main() {
-	http.HandleFunc("/analyze", analyzeHandler) // <-- REGISTRA el handler
+	http.HandleFunc("/analyze", analyzeHandler) 
 
 	port := ":8080"
 	println("Servidor iniciado en http://localhost" + port)
@@ -42,7 +42,7 @@ func main() {
 }
 
 func enableCors(w *http.ResponseWriter) {
-	(*w).Header().Set("Access-Control-Allow-Origin", "*") // o especifica "http://localhost:3000" si usas React
+	(*w).Header().Set("Access-Control-Allow-Origin", "*") 
 	(*w).Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 	(*w).Header().Set("Access-Control-Allow-Headers", "Content-Type")
 }

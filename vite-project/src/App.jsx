@@ -1,5 +1,5 @@
 import { useState } from "react";
-import "./App.css"; // si usas Tailwind, puedes ignorar esto
+import "./App.css"; 
 
 export default function App() {
   const [code, setCode] = useState("");
