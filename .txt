@@ -7,7 +7,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("lexical");
 
-
+// Función mejorada para detectar errores léxicos de PHP localmente como respaldo
   const performLocalLexicalAnalysis = (code) => {
     const errors = [];
     const lines = code.split('\n');
@@ -15,7 +15,7 @@ function App() {
     lines.forEach((line, lineIndex) => {
       const lineNumber = lineIndex + 1;
       
-
+      // Detectar palabras mal escritas comunes en PHP
       const commonMisspellings = [
         { wrong: /\b(?:function|funcion|fuction|funciton)\s+(?![\w])/gi, correct: 'function', message: 'Palabra clave mal escrita: debería ser "function"' },
         { wrong: /\becho\s+[^"';]/gi, correct: 'echo "texto";', message: 'Echo sin comillas: el texto debe estar entre comillas' },
@@ -47,7 +47,7 @@ function App() {
         }
       });
 
-   
+      // Detectar variables PHP sin el símbolo $
       const phpVariablePattern = /\b(?:function\s+\w+\s*\([^)]*\)|if\s*\(|for\s*\(|while\s*\(|foreach\s*\()[^)]*\b([a-zA-Z_][a-zA-Z0-9_]*)\b(?!\s*\()/g;
       let varMatch;
       while ((varMatch = phpVariablePattern.exec(line)) !== null) {
@@ -62,7 +62,7 @@ function App() {
         }
       }
 
-     
+      // Detectar comillas sin cerrar
       const quotePattern = /["']/g;
       let quotes = [];
       let match;
@@ -81,7 +81,7 @@ function App() {
         }
       }
 
-    
+      // Detectar paréntesis/llaves desbalanceados básico
       const openChars = ['(', '[', '{'];
       const closeChars = [')', ']', '}'];
       const stack = [];
@@ -105,7 +105,7 @@ function App() {
         }
       }
 
-     
+      // Detectar punto y coma faltante al final de líneas
       const needsSemicolon = /^(?!.*[{}]).*(?:echo|print|\$\w+\s*=|return|break|continue|die|exit)\s*[^;{]\s*$/;
       if (needsSemicolon.test(line.trim()) && !line.trim().endsWith(';') && line.trim() !== '') {
         errors.push({
@@ -126,8 +126,10 @@ function App() {
     setLoading(true);
 
     try {
-    
+      // Primero intentar análisis local
       const localErrors = performLocalLexicalAnalysis(code);
+      
+      // Luego intentar el análisis del servidor (adaptado para PHP)
       const response = await fetch("http://localhost:8080/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -141,6 +143,7 @@ function App() {
         console.warn("Servidor no disponible, usando análisis local");
       }
 
+      // Combinar resultados
       const combinedResult = {
         reservedWords: serverResult?.reservedWords || [],
         operators: serverResult?.operators || [],
