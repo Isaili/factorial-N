@@ -1,848 +1,431 @@
-import { useState } from "react";
+import React, { useState } from 'react';
+import { Play, Code, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
 
-function App() {
-  const [code, setCode] = useState("");
+const FactorialAnalyzer = () => {
+  const [code, setCode] = useState(`def factorial(n):
+    if n <= 1:
+        return 1
+    else:
+        return n * factorial(n - 1)
+
+x = 5
+print("El factorial de", x, "es", factorial(x))`);
+  
   const [result, setResult] = useState(null);
-  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState("lexical");
+  const [error, setError] = useState('');
 
-
-  const performLocalLexicalAnalysis = (code) => {
-    const errors = [];
-    const lines = code.split('\n');
-    
-    lines.forEach((line, lineIndex) => {
-      const lineNumber = lineIndex + 1;
-      
-
-      const commonMisspellings = [
-        { wrong: /\b(?:function|funcion|fuction|funciton)\s+(?![\w])/gi, correct: 'function', message: 'Palabra clave mal escrita: debería ser "function"' },
-        { wrong: /\becho\s+[^"';]/gi, correct: 'echo "texto";', message: 'Echo sin comillas: el texto debe estar entre comillas' },
-        { wrong: /\becho\s+"[^"]*"(?!\s*;)/gi, correct: 'echo "texto";', message: 'Echo sin punto y coma al final' },
-        { wrong: /\bprint\s+[^"';]/gi, correct: 'print "texto";', message: 'Print sin comillas: el texto debe estar entre comillas' },
-        { wrong: /\bvar_dump\s*\(/gi, correct: 'var_dump()', message: 'Función de depuración encontrada' },
-        { wrong: /\bprint_r\s*\(/gi, correct: 'print_r()', message: 'Función de depuración encontrada' },
-        { wrong: /\$[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*[^"'\s;]+(?!\s*;)/gi, correct: '$variable = valor;', message: 'Asignación sin punto y coma al final' },
-        { wrong: /\bif\s*\([^)]*\)\s*(?!{)/gi, correct: 'if (condicion) {', message: 'Estructura if sin llaves' },
-        { wrong: /\bfor\s*\([^)]*\)\s*(?!{)/gi, correct: 'for (init; cond; inc) {', message: 'Estructura for sin llaves' },
-        { wrong: /\bwhile\s*\([^)]*\)\s*(?!{)/gi, correct: 'while (condicion) {', message: 'Estructura while sin llaves' },
-        { wrong: /\bforeach\s*\([^)]*\)\s*(?!{)/gi, correct: 'foreach ($array as $item) {', message: 'Estructura foreach sin llaves' },
-        { wrong: /\$[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*"[^"]*(?!")$/gm, correct: '$variable = "valor";', message: 'Cadena sin cerrar comillas dobles' },
-        { wrong: /\$[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*'[^']*(?!')$/gm, correct: "$variable = 'valor';", message: 'Cadena sin cerrar comillas simples' },
-        { wrong: /[^<]\?php/gi, correct: '<?php', message: 'Etiqueta PHP mal formada: debe ser <?php' },
-        { wrong: /\?\>\s*$/gm, correct: '', message: 'Etiqueta de cierre ?> innecesaria al final del archivo' },
-      ];
-
-      commonMisspellings.forEach(({ wrong, correct, message }) => {
-        let match;
-        while ((match = wrong.exec(line)) !== null) {
-          errors.push({
-            line: lineNumber,
-            column: match.index + 1,
-            type: 'lexical',
-            message: message,
-            suggestion: correct
-          });
-        }
-      });
-
-   
-      const phpVariablePattern = /\b(?:function\s+\w+\s*\([^)]*\)|if\s*\(|for\s*\(|while\s*\(|foreach\s*\()[^)]*\b([a-zA-Z_][a-zA-Z0-9_]*)\b(?!\s*\()/g;
-      let varMatch;
-      while ((varMatch = phpVariablePattern.exec(line)) !== null) {
-        if (!varMatch[1].match(/^(true|false|null|and|or|xor|array|new|class|function|return|if|else|elseif|endif|for|endfor|foreach|endforeach|while|endwhile|do|switch|endswitch|case|default|break|continue|public|private|protected|static|const|var|global|isset|empty|unset|die|exit|include|require|include_once|require_once)$/i)) {
-          errors.push({
-            line: lineNumber,
-            column: varMatch.index + 1,
-            type: 'lexical',
-            message: `Posible variable PHP sin símbolo $: "${varMatch[1]}" debería ser "$${varMatch[1]}"`,
-            suggestion: `$${varMatch[1]}`
-          });
-        }
-      }
-
-     
-      const quotePattern = /["']/g;
-      let quotes = [];
-      let match;
-      while ((match = quotePattern.exec(line)) !== null) {
-        quotes.push({ char: match[0], pos: match.index });
-      }
-      
-      for (let i = 0; i < quotes.length; i += 2) {
-        if (i + 1 >= quotes.length || quotes[i].char !== quotes[i + 1].char) {
-          errors.push({
-            line: lineNumber,
-            column: quotes[i].pos + 1,
-            type: 'lexical',
-            message: `Comilla ${quotes[i].char} sin cerrar`
-          });
-        }
-      }
-
-    
-      const openChars = ['(', '[', '{'];
-      const closeChars = [')', ']', '}'];
-      const stack = [];
-      
-      for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-        if (openChars.includes(char)) {
-          stack.push({ char, pos: i, line: lineNumber });
-        } else if (closeChars.includes(char)) {
-          const expectedOpen = openChars[closeChars.indexOf(char)];
-          if (stack.length === 0 || stack[stack.length - 1].char !== expectedOpen) {
-            errors.push({
-              line: lineNumber,
-              column: i + 1,
-              type: 'syntax',
-              message: `${char} inesperado o desbalanceado`
-            });
-          } else {
-            stack.pop();
-          }
-        }
-      }
-
-     
-      const needsSemicolon = /^(?!.*[{}]).*(?:echo|print|\$\w+\s*=|return|break|continue|die|exit)\s*[^;{]\s*$/;
-      if (needsSemicolon.test(line.trim()) && !line.trim().endsWith(';') && line.trim() !== '') {
-        errors.push({
-          line: lineNumber,
-          column: line.length,
-          type: 'syntax',
-          message: 'Falta punto y coma al final de la línea'
-        });
-      }
-    });
-
-    return errors;
-  };
-
-  const handleAnalyze = async () => {
-    setError("");
-    setResult(null);
+  const analyzeCode = async () => {
     setLoading(true);
-
-    try {
+    setError('');
     
-      const localErrors = performLocalLexicalAnalysis(code);
-      const response = await fetch("http://localhost:8080/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, language: "php" }),
+    try {
+      const response = await fetch('http://localhost:8080/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code }),
       });
-
-      let serverResult = null;
-      if (response.ok) {
-        serverResult = await response.json();
-      } else {
-        console.warn("Servidor no disponible, usando análisis local");
-      }
-
-      const combinedResult = {
-        reservedWords: serverResult?.reservedWords || [],
-        operators: serverResult?.operators || [],
-        symbols: serverResult?.symbols || [],
-        numbers: serverResult?.numbers || [],
-        strings: serverResult?.strings || [],
-        comments: serverResult?.comments || [],
-        variables: serverResult?.variables || [],
-        syntaxErrors: serverResult?.syntaxErrors || localErrors.filter(e => e.type === 'syntax'),
-        semanticErrors: serverResult?.semanticErrors || [],
-        lexicalErrors: [...(serverResult?.lexicalErrors || []), ...localErrors.filter(e => e.type === 'lexical')],
-        suggestions: serverResult?.suggestions || [
-          "Asegúrate de que todas las variables PHP comiencen con $",
-          "Revisa que todas las líneas terminen con punto y coma (;)",
-          "Verifica que las comillas estén balanceadas",
-          "Usa llaves {} para delimitar bloques de código",
-          "Asegúrate de que el código comience con <?php"
-        ],
-        totals: {
-          reservedWords: serverResult?.reservedWords?.length || 0,
-          operators: serverResult?.operators?.length || 0,
-          symbols: serverResult?.symbols?.length || 0,
-          numbers: serverResult?.numbers?.length || 0,
-          strings: serverResult?.strings?.length || 0,
-          comments: serverResult?.comments?.length || 0,
-          variables: serverResult?.variables?.length || 0,
-          syntaxErrors: (serverResult?.syntaxErrors?.length || 0) + localErrors.filter(e => e.type === 'syntax').length,
-          semanticErrors: serverResult?.semanticErrors?.length || 0,
-          lexicalErrors: ((serverResult?.lexicalErrors?.length || 0) + localErrors.filter(e => e.type === 'lexical').length)
-        }
-      };
-
-      setResult(combinedResult);
       
-      // Auto-cambiar a la pestaña de errores si hay errores críticos
-      if (combinedResult.lexicalErrors.length > 0) {
-        setActiveTab('lexicalErrors');
-      } else if (combinedResult.syntaxErrors.length > 0) {
-        setActiveTab('syntax');
+      if (!response.ok) {
+        throw new Error('Error en la comunicación con el servidor');
       }
-
+      
+      const data = await response.json();
+      setResult(data);
     } catch (err) {
-      // Si falla completamente, usar solo análisis local
-      const localErrors = performLocalLexicalAnalysis(code);
-      setResult({
-        reservedWords: [],
-        operators: [],
-        symbols: [],
-        numbers: [],
-        strings: [],
-        comments: [],
-        variables: [],
-        syntaxErrors: localErrors.filter(e => e.type === 'syntax'),
-        semanticErrors: [],
-        lexicalErrors: localErrors.filter(e => e.type === 'lexical'),
-        suggestions: [
-          "Servidor no disponible - usando análisis local básico para PHP",
-          "Asegúrate de que todas las variables PHP comiencen con $",
-          "Revisa que todas las líneas terminen con punto y coma (;)",
-          "Verifica que las comillas estén balanceadas"
-        ],
-        totals: {
-          reservedWords: 0,
-          operators: 0,
-          symbols: 0,
-          numbers: 0,
-          strings: 0,
-          comments: 0,
-          variables: 0,
-          syntaxErrors: localErrors.filter(e => e.type === 'syntax').length,
-          semanticErrors: 0,
-          lexicalErrors: localErrors.filter(e => e.type === 'lexical').length
-        }
-      });
-      setError("Usando análisis local para PHP: " + err.message);
+      setError('Error: ' + err.message + '. Asegúrate de que el servidor Go esté ejecutándose en puerto 8080.');
     } finally {
       setLoading(false);
     }
   };
-  const handleClear = () => {
-    setCode("");
-    setResult(null);
-    setError("");
-    setActiveTab("lexical");
+
+  const getTokenStyle = (tokenType) => {
+    const styles = {
+      'KEYWORD': {
+        backgroundColor: '#f3e8ff',
+        color: '#6b21a8',
+        border: '1px solid #e9d5ff'
+      },
+      'IDENTIFIER': {
+        backgroundColor: '#dbeafe',
+        color: '#1e40af',
+        border: '1px solid #bfdbfe'
+      },
+      'NUMBER': {
+        backgroundColor: '#dcfce7',
+        color: '#166534',
+        border: '1px solid #bbf7d0'
+      },
+      'STRING': {
+        backgroundColor: '#fef3c7',
+        color: '#92400e',
+        border: '1px solid #fde68a'
+      },
+      'OPERATOR': {
+        backgroundColor: '#fee2e2',
+        color: '#991b1b',
+        border: '1px solid #fecaca'
+      },
+      'PARENTHESIS': {
+        backgroundColor: '#f3f4f6',
+        color: '#374151',
+        border: '1px solid #d1d5db'
+      },
+      'COMMA': {
+        backgroundColor: '#f3f4f6',
+        color: '#374151',
+        border: '1px solid #d1d5db'
+      },
+      'COLON': {
+        backgroundColor: '#f3f4f6',
+        color: '#374151',
+        border: '1px solid #d1d5db'
+      },
+      'UNKNOWN': {
+        backgroundColor: '#fecaca',
+        color: '#7f1d1d',
+        border: '1px solid #f87171'
+      }
+    };
+    return styles[tokenType] || styles['UNKNOWN'];
   };
 
-  const handleExample = () => {
-    setCode(`ma el fuction miFuncion() {
-    var nombre = "Juan;
-    if (nombre == "Juan" {
-        consle.log("Hola " + nombre);
-        retrn true;
-    }
-    // Comentario sin cerrar /*
-    for (let i = 0; i < 10 i++) {
-        echo "Número: " + i
-    }`);
+  const containerStyle = {
+    minHeight: '100vh',
+    background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+    padding: '24px',
+    fontFamily: 'system-ui, -apple-system, sans-serif'
   };
 
-  const renderTable = (title, items, icon = "📋") => (
-    <div className="analysis-section">
-      <h3 className="section-title">
-        <span className="icon">{icon}</span>
-        {title} ({items.length})
-      </h3>
-      {items.length > 0 ? (
-        <div className="table-container">
-          <table className="analysis-table">
-            <thead>
-              <tr>
-                <th>Valor</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item, index) => (
-                <tr key={index}>
-                  <td className="item-cell">{item}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <p className="no-items">No se encontraron elementos.</p>
-      )}
-    </div>
-  );
+  const cardStyle = {
+    backgroundColor: 'white',
+    borderRadius: '12px',
+    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    overflow: 'hidden',
+    marginBottom: '24px'
+  };
 
-  const renderErrorTable = (title, errors, icon = "❌", bgColor = "#fee") => (
-    <div className="analysis-section">
-      <h3 className="section-title">
-        <span className="icon">{icon}</span>
-        {title} ({errors.length})
-      </h3>
-      {errors.length > 0 ? (
-        <div className="table-container">
-          <table className="analysis-table error-table">
-            <thead style={{ backgroundColor: bgColor }}>
-              <tr>
-                <th>Línea</th>
-                <th>Columna</th>
-                <th>Tipo</th>
-                <th>Mensaje</th>
-                <th>Sugerencia</th>
-              </tr>
-            </thead>
-            <tbody>
-              {errors.map((e, index) => (
-                <tr key={index} className="error-row">
-                  <td className="line-col">{e.line > 0 ? e.line : "General"}</td>
-                  <td className="line-col">{e.column > 0 ? e.column : "-"}</td>
-                  <td className={`error-type ${e.type || 'unknown'}`}>
-                    {e.type || 'error'}
-                  </td>
-                  <td className="error-message">{e.message}</td>
-                  <td className="suggestion-cell">{e.suggestion || "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <p className="no-items success">✅ No se encontraron errores.</p>
-      )}
-    </div>
-  );
+  const headerStyle = {
+    backgroundColor: '#475569',
+    padding: '16px 24px',
+    color: 'white',
+    fontWeight: '600',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px'
+  };
 
-  const renderSuggestions = (suggestions) => (
-    <div className="analysis-section">
-      <h3 className="section-title">
-        <span className="icon">💡</span>
-        Sugerencias ({suggestions.length})
-      </h3>
-      {suggestions.length > 0 ? (
-        <div className="suggestions-container">
-          {suggestions.map((suggestion, index) => (
-            <div key={index} className="suggestion-item">
-              <span className="suggestion-icon">💡</span>
-              <span className="suggestion-text">{suggestion}</span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="no-items success">✅ No hay sugerencias.</p>
-      )}
-    </div>
-  );
+  const buttonStyle = {
+    backgroundColor: '#2563eb',
+    color: 'white',
+    padding: '8px 24px',
+    borderRadius: '8px',
+    border: 'none',
+    fontWeight: '500',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s'
+  };
 
-  const renderTotals = (totals) => (
-    <div className="totals-container">
-      <h3 className="section-title">
-        <span className="icon">📊</span>
-        Resumen del Análisis
-      </h3>
-      <div className="totals-grid">
-        <div className="total-item">
-          <span className="total-number">{totals.reservedWords || 0}</span>
-          <span className="total-label">Palabras Reservadas</span>
-        </div>
-        <div className="total-item">
-          <span className="total-number">{totals.operators || 0}</span>
-          <span className="total-label">Operadores</span>
-        </div>
-        <div className="total-item">
-          <span className="total-number">{totals.symbols || 0}</span>
-          <span className="total-label">Símbolos</span>
-        </div>
-        <div className="total-item">
-          <span className="total-number">{totals.numbers || 0}</span>
-          <span className="total-label">Números</span>
-        </div>
-        <div className="total-item">
-          <span className="total-number">{totals.strings || 0}</span>
-          <span className="total-label">Cadenas</span>
-        </div>
-        <div className="total-item">
-          <span className="total-number">{totals.comments || 0}</span>
-          <span className="total-label">Comentarios</span>
-        </div>
-        <div className="total-item error">
-          <span className="total-number">{totals.syntaxErrors || 0}</span>
-          <span className="total-label">Errores Sintácticos</span>
-        </div>
-        <div className="total-item error">
-          <span className="total-number">{totals.semanticErrors || 0}</span>
-          <span className="total-label">Errores Semánticos</span>
-        </div>
-        <div className="total-item error">
-          <span className="total-number">{totals.lexicalErrors || 0}</span>
-          <span className="total-label">Errores Léxicos</span>
-        </div>
-      </div>
-    </div>
-  );
+  const textareaStyle = {
+    width: '100%',
+    height: '300px',
+    padding: '16px',
+    fontFamily: 'monospace',
+    fontSize: '14px',
+    backgroundColor: '#f8fafc',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    resize: 'none',
+    outline: 'none'
+  };
+
+  const tokenStyle = {
+    display: 'inline-block',
+    padding: '4px 12px',
+    margin: '2px',
+    borderRadius: '16px',
+    fontSize: '12px',
+    fontWeight: '500',
+    cursor: 'default'
+  };
+
+  const errorStyle = {
+    backgroundColor: '#fef2f2',
+    border: '1px solid #fecaca',
+    borderRadius: '8px',
+    padding: '16px',
+    marginTop: '16px'
+  };
+
+  const successStyle = {
+    backgroundColor: '#f0fdf4',
+    border: '2px solid #bbf7d0',
+    borderRadius: '8px',
+    padding: '16px'
+  };
+
+  const failStyle = {
+    backgroundColor: '#fef2f2',
+    border: '2px solid #fecaca',
+    borderRadius: '8px',
+    padding: '16px'
+  };
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      padding: '20px',
-      fontFamily: '"Segoe UI", Tahoma, Geneva, Verdana, sans-serif'
-    }}>
-      <div style={{
-        maxWidth: '1200px',
-        margin: '0 auto',
-        backgroundColor: 'white',
-        borderRadius: '15px',
-        boxShadow: '0 20px 40px rgba(0,0,0,0.1)',
-        overflow: 'hidden'
-      }}>
-        {/* Header */}
-        <div style={{
-          background: 'linear-gradient(135deg, #2c3e50 0%, #3498db 100%)',
-          color: 'white',
-          padding: '30px',
-          textAlign: 'center'
-        }}>
-          <h1 style={{
-            margin: '0 0 10px 0',
-            fontSize: '2.5rem',
-            fontWeight: '700',
-            textShadow: '2px 2px 4px rgba(0,0,0,0.3)'
+    <div style={containerStyle}>
+      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+        {/* Título */}
+        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+          <h1 style={{ 
+            fontSize: '2.5rem', 
+            fontWeight: 'bold', 
+            color: 'white', 
+            marginBottom: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '12px'
           }}>
-            🔍 Analizador Léxico y Sintáctico Mejorado
+            <Code size={40} style={{ color: '#60a5fa' }} />
+            Analizador de Factorial
           </h1>
-          <p style={{
-            margin: 0,
-            fontSize: '1.1rem',
-            opacity: 0.9
-          }}>
-            Análisis completo con detección avanzada de errores léxicos
-          </p>
+          <p style={{ color: '#cbd5e1' }}>Análisis Léxico, Sintáctico y Semántico</p>
         </div>
 
-        {/* Main Content */}
-        <div style={{ padding: '30px' }}>
-          {/* Code Input Section */}
-          <div style={{
-            backgroundColor: '#f8f9fa',
-            borderRadius: '10px',
-            padding: '25px',
-            marginBottom: '25px',
-            border: '1px solid #e9ecef'
-          }}>
-            <h2 style={{
-              margin: '0 0 20px 0',
-              color: '#2c3e50',
-              fontSize: '1.4rem'
-            }}>
-              📝 Editor de Código
-            </h2>
-            
-            <div style={{ marginBottom: '15px' }}>
-              <button
-                onClick={handleExample}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: '#17a2b8',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                  marginRight: '10px',
-                  fontSize: '14px'
-                }}
-              >
-                📖 Cargar Ejemplo con Errores
-              </button>
-              <button
-                onClick={handleClear}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: '#6c757d',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                  fontSize: '14px'
-                }}
-              >
-                🗑️ Limpiar
-              </button>
-            </div>
-
+        {/* Panel de Código */}
+        <div style={cardStyle}>
+          <div style={headerStyle}>
+            <Code size={20} />
+            Editor de Código
+          </div>
+          <div style={{ padding: '24px' }}>
             <textarea
-              rows={12}
-              style={{
-                width: '100%',
-                padding: '15px',
-                fontFamily: '"Fira Code", "Consolas", monospace',
-                fontSize: '14px',
-                border: '2px solid #dee2e6',
-                borderRadius: '8px',
-                resize: 'vertical',
-                lineHeight: '1.5',
-                backgroundColor: '#ffffff'
-              }}
-              placeholder="Escribe tu código aquí... Prueba escribir 'ma el fuction' para ver la detección de errores léxicos"
               value={code}
               onChange={(e) => setCode(e.target.value)}
+              style={textareaStyle}
+              placeholder="Ingresa tu código aquí..."
             />
-
-            <button
-              onClick={handleAnalyze}
-              disabled={loading || !code.trim()}
-              style={{
-                padding: '12px 30px',
-                backgroundColor: loading ? '#6c757d' : '#28a745',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                marginTop: '15px',
-                fontSize: '16px',
-                fontWeight: '600',
-                transition: 'all 0.3s ease'
-              }}
-            >
-              {loading ? '⏳ Analizando...' : '🚀 Analizar Código'}
-            </button>
-          </div>
-
-          {/* Error Display */}
-          {error && (
-            <div style={{
-              backgroundColor: '#f8d7da',
-              color: '#721c24',
-              padding: '15px',
-              border: '1px solid #f5c6cb',
-              borderRadius: '8px',
-              marginBottom: '20px'
-            }}>
-              <strong>⚠️ Aviso:</strong> {error}
+            <div style={{ marginTop: '16px' }}>
+              <button
+                onClick={analyzeCode}
+                disabled={loading}
+                style={{
+                  ...buttonStyle,
+                  backgroundColor: loading ? '#94a3b8' : '#2563eb'
+                }}
+                onMouseOver={(e) => {
+                  if (!loading) e.target.style.backgroundColor = '#1d4ed8';
+                }}
+                onMouseOut={(e) => {
+                  if (!loading) e.target.style.backgroundColor = '#2563eb';
+                }}
+              >
+                <Play size={16} />
+                {loading ? 'Analizando...' : 'Analizar Código'}
+              </button>
             </div>
-          )}
+            
+            {error && (
+              <div style={errorStyle}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#b91c1c' }}>
+                  <XCircle size={16} />
+                  <span style={{ fontWeight: '500' }}>Error</span>
+                </div>
+                <p style={{ color: '#dc2626', marginTop: '4px', margin: 0 }}>{error}</p>
+              </div>
+            )}
+          </div>
+        </div>
 
-          {/* Results */}
-          {result && (
-            <div>
-              {/* Totals Summary */}
-              {renderTotals(result.totals)}
+        {result && (
+          <>
+            {/* Resumen del Análisis */}
+            <div style={cardStyle}>
+              <div style={headerStyle}>
+                Resumen del Análisis
+              </div>
+              <div style={{ padding: '24px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div style={result.syntaxValid ? successStyle : failStyle}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      {result.syntaxValid ? 
+                        <CheckCircle style={{ color: '#16a34a' }} size={20} /> : 
+                        <XCircle style={{ color: '#dc2626' }} size={20} />
+                      }
+                      <span style={{ 
+                        fontWeight: '500', 
+                        color: result.syntaxValid ? '#15803d' : '#b91c1c' 
+                      }}>
+                        Análisis Sintáctico
+                      </span>
+                    </div>
+                    <p style={{ 
+                      fontSize: '14px', 
+                      color: result.syntaxValid ? '#16a34a' : '#dc2626',
+                      margin: 0
+                    }}>
+                      {result.syntaxValid ? 'Sintaxis correcta' : `${result.syntaxErrors.length} errores`}
+                    </p>
+                  </div>
+                  
+                  <div style={result.semanticValid ? successStyle : failStyle}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      {result.semanticValid ? 
+                        <CheckCircle style={{ color: '#16a34a' }} size={20} /> : 
+                        <XCircle style={{ color: '#dc2626' }} size={20} />
+                      }
+                      <span style={{ 
+                        fontWeight: '500', 
+                        color: result.semanticValid ? '#15803d' : '#b91c1c' 
+                      }}>
+                        Análisis Semántico
+                      </span>
+                    </div>
+                    <p style={{ 
+                      fontSize: '14px', 
+                      color: result.semanticValid ? '#16a34a' : '#dc2626',
+                      margin: 0
+                    }}>
+                      {result.semanticValid ? 'Semántica correcta' : `${result.semanticErrors.length} errores`}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-              {/* Tab Navigation */}
-              <div style={{
-                borderBottom: '2px solid #e9ecef',
-                marginBottom: '25px',
-                marginTop: '30px'
-              }}>
-                <div style={{ display: 'flex', gap: '0', flexWrap: 'wrap' }}>
-                  {[
-                    { id: 'lexical', label: '📋 Análisis Léxico', color: '#007bff' },
-                    { id: 'lexicalErrors', label: '🔍 Errores Léxicos', color: '#6f42c1', count: result.lexicalErrors?.length },
-                    { id: 'syntax', label: '❌ Errores Sintácticos', color: '#dc3545', count: result.syntaxErrors?.length },
-                    { id: 'semantic', label: '⚠️ Errores Semánticos', color: '#fd7e14', count: result.semanticErrors?.length },
-                    { id: 'suggestions', label: '💡 Sugerencias', color: '#28a745' }
-                  ].map(tab => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
+            {/* Tokens */}
+            <div style={cardStyle}>
+              <div style={headerStyle}>
+                Tokens Identificados ({result.tokens.length})
+              </div>
+              <div style={{ padding: '24px' }}>
+                <div style={{ 
+                  maxHeight: '300px', 
+                  overflowY: 'auto',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  padding: '16px'
+                }}>
+                  {result.tokens.map((token, index) => (
+                    <span
+                      key={index}
                       style={{
-                        padding: '12px 20px',
-                        border: 'none',
-                        backgroundColor: activeTab === tab.id ? tab.color : 'transparent',
-                        color: activeTab === tab.id ? 'white' : tab.color,
-                        cursor: 'pointer',
-                        borderRadius: '8px 8px 0 0',
-                        fontWeight: '600',
-                        fontSize: '14px',
-                        transition: 'all 0.3s ease',
-                        position: 'relative'
+                        ...tokenStyle,
+                        ...getTokenStyle(token.type)
                       }}
+                      title={`Tipo: ${token.type} | Línea: ${token.line} | Columna: ${token.col}`}
                     >
-                      {tab.label}
-                      {tab.count > 0 && (
-                        <span style={{
-                          position: 'absolute',
-                          top: '-5px',
-                          right: '-5px',
-                          backgroundColor: '#dc3545',
-                          color: 'white',
-                          borderRadius: '50%',
-                          width: '20px',
-                          height: '20px',
-                          fontSize: '10px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}>
-                          {tab.count}
-                        </span>
-                      )}
-                    </button>
+                      {token.value}
+                    </span>
                   ))}
                 </div>
               </div>
-
-              {/* Tab Content */}
-              <div style={{ minHeight: '300px' }}>
-                {activeTab === 'lexical' && (
-                  <div className="tab-content">
-                    {renderTable("Palabras Reservadas", result.reservedWords, "🔤")}
-                    {renderTable("Operadores", result.operators, "➕")}
-                    {renderTable("Símbolos", result.symbols, "🔣")}
-                    {renderTable("Números", result.numbers, "🔢")}
-                    {renderTable("Cadenas (strings)", result.strings, "📝")}
-                    {renderTable("Comentarios", result.comments, "💬")}
-                  </div>
-                )}
-
-                {activeTab === 'lexicalErrors' && (
-                  <div className="tab-content">
-                    {renderErrorTable("Errores Léxicos", result.lexicalErrors || [], "🔍", "#e7e3ff")}
-                  </div>
-                )}
-
-                {activeTab === 'syntax' && (
-                  <div className="tab-content">
-                    {renderErrorTable("Errores de Sintaxis", result.syntaxErrors, "❌", "#fee")}
-                  </div>
-                )}
-
-                {activeTab === 'semantic' && (
-                  <div className="tab-content">
-                    {renderErrorTable("Errores Semánticos", result.semanticErrors, "⚠️", "#fff3cd")}
-                  </div>
-                )}
-
-                {activeTab === 'suggestions' && (
-                  <div className="tab-content">
-                    {renderSuggestions(result.suggestions)}
-                  </div>
-                )}
-              </div>
             </div>
-          )}
+
+            {/* Errores */}
+            {(result.syntaxErrors.length > 0 || result.semanticErrors.length > 0) && (
+              <div style={cardStyle}>
+                <div style={{
+                  ...headerStyle,
+                  backgroundColor: '#dc2626'
+                }}>
+                  <AlertTriangle size={20} />
+                  Errores Encontrados
+                </div>
+                <div style={{ padding: '24px' }}>
+                  {result.syntaxErrors.length > 0 && (
+                    <div style={{ marginBottom: '16px' }}>
+                      <h3 style={{ fontWeight: '500', color: '#b91c1c', marginBottom: '8px' }}>
+                        Errores Sintácticos:
+                      </h3>
+                      <ul style={{ margin: 0, paddingLeft: '20px' }}>
+                        {result.syntaxErrors.map((error, index) => (
+                          <li key={index} style={{ 
+                            color: '#dc2626', 
+                            fontSize: '14px',
+                            marginBottom: '4px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px'
+                          }}>
+                            <XCircle size={14} />
+                            {error}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  
+                  {result.semanticErrors.length > 0 && (
+                    <div>
+                      <h3 style={{ fontWeight: '500', color: '#b91c1c', marginBottom: '8px' }}>
+                        Errores Semánticos:
+                      </h3>
+                      <ul style={{ margin: 0, paddingLeft: '20px' }}>
+                        {result.semanticErrors.map((error, index) => (
+                          <li key={index} style={{ 
+                            color: '#dc2626', 
+                            fontSize: '14px',
+                            marginBottom: '4px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px'
+                          }}>
+                            <XCircle size={14} />
+                            {error}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Leyenda de Tokens */}
+        <div style={cardStyle}>
+          <div style={headerStyle}>
+            Leyenda de Tokens
+          </div>
+          <div style={{ padding: '24px' }}>
+            <div style={{ 
+              display: 'grid', 
+              gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', 
+              gap: '16px' 
+            }}>
+              {[
+                { type: 'KEYWORD', desc: 'Palabras clave (def, if, else, return, print)' },
+                { type: 'IDENTIFIER', desc: 'Identificadores (nombres de variables y funciones)' },
+                { type: 'NUMBER', desc: 'Números literales' },
+                { type: 'STRING', desc: 'Cadenas de texto' },
+                { type: 'OPERATOR', desc: 'Operadores (<=, *, -, =)' },
+                { type: 'PARENTHESIS', desc: 'Paréntesis ( )' },
+                { type: 'COMMA', desc: 'Comas' },
+                { type: 'COLON', desc: 'Dos puntos :' }
+              ].map(({ type, desc }) => (
+                <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{
+                    ...tokenStyle,
+                    ...getTokenStyle(type)
+                  }}>
+                    {type}
+                  </span>
+                  <span style={{ fontSize: '14px', color: '#6b7280' }}>{desc}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
-
-      <style jsx>{`
-        .analysis-section {
-          background: #ffffff;
-          border: 1px solid #e9ecef;
-          border-radius: 10px;
-          padding: 20px;
-          margin-bottom: 20px;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        }
-
-        .section-title {
-          margin: 0 0 15px 0;
-          color: #2c3e50;
-          font-size: 1.2rem;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .icon {
-          font-size: 1.3rem;
-        }
-
-        .table-container {
-          overflow-x: auto;
-          border-radius: 8px;
-          border: 1px solid #dee2e6;
-        }
-
-        .analysis-table {
-          width: 100%;
-          border-collapse: collapse;
-          font-size: 14px;
-        }
-
-        .analysis-table th {
-          background-color: #f8f9fa;
-          padding: 12px;
-          text-align: left;
-          font-weight: 600;
-          color: #495057;
-          border-bottom: 2px solid #dee2e6;
-        }
-
-        .analysis-table td {
-          padding: 10px 12px;
-          border-bottom: 1px solid #dee2e6;
-        }
-
-        .analysis-table tbody tr:hover {
-          background-color: #f8f9fa;
-        }
-
-        .item-cell {
-          font-family: "Fira Code", "Consolas", monospace;
-          background-color: #f8f9fa;
-          color: #495057;
-          font-weight: 500;
-        }
-
-        .error-row:hover {
-          background-color: #fff5f5;
-        }
-
-        .line-col {
-          text-align: center;
-          font-weight: 600;
-          color: #6c757d;
-        }
-
-        .error-type {
-          text-transform: uppercase;
-          font-size: 11px;
-          font-weight: 600;
-          padding: 4px 8px;
-          border-radius: 12px;
-          text-align: center;
-        }
-
-        .error-type.syntax {
-          background-color: #fee;
-          color: #dc3545;
-        }
-
-        .error-type.semantic {
-          background-color: #fff3cd;
-          color: #856404;
-        }
-
-        .error-type.lexical {
-          background-color: #e7e3ff;
-          color: #6f42c1;
-        }
-
-        .error-message {
-          color: #495057;
-          line-height: 1.4;
-        }
-
-        .suggestion-cell {
-          color: #28a745;
-          font-weight: 600;
-          font-size: 12px;
-        }
-
-        .no-items {
-          text-align: center;
-          color: #6c757d;
-          font-style: italic;
-          padding: 20px;
-          margin: 0;
-        }
-
-        .no-items.success {
-          color: #28a745;
-          font-weight: 600;
-        }
-
-        .suggestions-container {
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-        }
-
-        .suggestion-item {
-          display: flex;
-          align-items: flex-start;
-          gap: 10px;
-          padding: 12px;
-          background-color: #e8f5e8;
-          border-radius: 8px;
-          border-left: 4px solid #28a745;
-        }
-
-        .suggestion-icon {
-          font-size: 16px;
-          margin-top: 2px;
-        }
-
-        .suggestion-text {
-          color: #155724;
-          line-height: 1.4;
-          flex: 1;
-        }
-
-        .totals-container {
-          background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-          border-radius: 12px;
-          padding: 25px;
-          margin-bottom: 30px;
-          border: 1px solid #dee2e6;
-        }
-
-        .totals-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-          gap: 15px;
-          margin-top: 20px;
-        }
-
-        .total-item {
-          background: white;
-          border-radius: 10px;
-          padding: 20px;
-          text-align: center;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-          transition: transform 0.3s ease;
-        }
-
-        .total-item:hover {
-          transform: translateY(-2px);
-        }
-
-        .total-item.error {
-          background: linear-gradient(135deg, #fff5f5 0%, #fee 100%);
-          border: 1px solid #f5c6cb;
-        }
-
-        .total-number {
-          display: block;
-          font-size: 2rem;
-          font-weight: 700;
-          color: #2c3e50;
-          margin-bottom: 5px;
-        }
-
-        .total-item.error .total-number {
-          color: #dc3545;
-        }
-
-        .total-label {
-          font-size: 12px;
-          color: #6c757d;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-          font-weight: 600;
-        }
-
-        .tab-content {
-          animation: fadeIn 0.3s ease;
-        }
-
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-
-        @media (max-width: 768px) {
-          .totals-grid {
-            grid-template-columns: repeat(2, 1fr);
-          }
-          
-          .analysis-table {
-            font-size: 12px;
-          }
-          
-          .analysis-table th,
-          .analysis-table td {
-            padding: 8px;
-          }
-        }
-      `}</style>
     </div>
   );
-}
+};
 
-export default App;
+export default FactorialAnalyzer;
